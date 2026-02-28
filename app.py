@@ -41,6 +41,7 @@ def get_balanced_questions(subject, total_limit):
         rem = total_limit % len(sections)
         qs = []
         selected_ids = set()
+        # الجولة الأولى: توزيع متوازن على الأقسام
         for i, sec in enumerate(sections):
             limit = q_per + (1 if i < rem else 0)
             if selected_ids:
@@ -52,6 +53,12 @@ def get_balanced_questions(subject, total_limit):
             for r in rows:
                 selected_ids.add(r[0])
             qs.extend(rows)
+        # جولة التعويض: إذا لم يكتمل العدد المطلوب، نجلب أسئلة إضافية من أي قسم
+        deficit = total_limit - len(qs)
+        if deficit > 0 and selected_ids:
+            placeholders = ','.join('?' * len(selected_ids))
+            cursor.execute(f'SELECT * FROM Questions WHERE subject=? AND id NOT IN ({placeholders}) ORDER BY RANDOM() LIMIT ?', (subject, *selected_ids, deficit))
+            qs.extend(cursor.fetchall())
     return qs
 
 def save_answer(q_id):
@@ -73,42 +80,47 @@ def finish_exam():
 # ==========================================
 
 def inject_exam_engine(end_ts):
+    dark = st.session_state.get('dark_mode', True)
+    radio_bg = "#1a1a1b" if dark else "#f0f2f6"
+    radio_border = "#3e3e42" if dark else "#dee2e6"
+    radio_text = "white" if dark else "#1a1a2e"
+    sel_bg = "#2d1616" if dark else "#ffe0e0"
     # CSS فقط عبر st.markdown — يعمل بشكل طبيعي
-    st.markdown("""
+    st.markdown(f"""
         <style>
         /* اتجاه النص من اليمين لليسار */
-        .main .block-container {
+        .main .block-container {{
             direction: rtl;
             text-align: right;
-        }
+        }}
         /* إخفاء دوائر الراديو */
-        div[role="radiogroup"] > label > div:first-child { display: none !important; }
-        div[role="radiogroup"] svg { display: none !important; }
-        div[role="radiogroup"] > label > div:first-of-type {
+        div[role="radiogroup"] > label > div:first-child {{ display: none !important; }}
+        div[role="radiogroup"] svg {{ display: none !important; }}
+        div[role="radiogroup"] > label > div:first-of-type {{
             display: none !important; width: 0 !important; height: 0 !important;
             overflow: hidden !important; margin: 0 !important; padding: 0 !important;
-        }
-        [data-testid="stRadio"] [role="radiogroup"] label > div:first-of-type { display: none !important; }
+        }}
+        [data-testid="stRadio"] [role="radiogroup"] label > div:first-of-type {{ display: none !important; }}
 
         /* تحويل الخيارات إلى بطاقات */
-        div[role="radiogroup"] > label {
-            background-color: #1a1a1b !important;
-            border: 1px solid #3e3e42 !important;
+        div[role="radiogroup"] > label {{
+            background-color: {radio_bg} !important;
+            border: 1px solid {radio_border} !important;
             padding: 15px 25px !important;
             border-radius: 10px !important;
             margin-bottom: 8px !important;
             width: 100% !important;
             cursor: pointer !important;
-            color: white !important;
+            color: {radio_text} !important;
             display: block !important;
             direction: rtl !important;
             text-align: right !important;
-        }
-        div[role="radiogroup"] > label[aria-checked="true"] {
+        }}
+        div[role="radiogroup"] > label[aria-checked="true"] {{
             border: 2px solid #ff4b4b !important;
-            background-color: #2d1616 !important;
+            background-color: {sel_bg} !important;
             box-shadow: 0 4px 12px rgba(255, 75, 75, 0.4) !important;
-        }
+        }}
         </style>
     """, unsafe_allow_html=True)
 
@@ -149,11 +161,11 @@ def inject_exam_engine(end_ts):
                 var inp = lbl.querySelector('input[type="radio"]');
                 if (inp && inp.checked) {{
                     lbl.style.border          = '2px solid #ff4b4b';
-                    lbl.style.backgroundColor = '#2d1616';
-                    lbl.style.boxShadow       = '0 4px 12px rgba(25,255,25,0.4)';
+                    lbl.style.backgroundColor = '{sel_bg}';
+                    lbl.style.boxShadow       = '0 4px 12px rgba(255,75,75,0.4)';
                 }} else {{
-                    lbl.style.border          = '1px solid #3e3e42';
-                    lbl.style.backgroundColor = '#1a1a1b';
+                    lbl.style.border          = '1px solid {radio_border}';
+                    lbl.style.backgroundColor = '{radio_bg}';
                     lbl.style.boxShadow       = 'none';
                 }}
             }}
@@ -245,6 +257,10 @@ def phase_setup():
         st.rerun()
 
 def phase_exam():
+    dark = st.session_state.get('dark_mode', True)
+    txt_color = '#ffffff' if dark else '#1a1a2e'
+    passage_color = '#e0e0e0' if dark else '#333'
+    passage_bg = 'rgba(255,193,7,0.1)' if dark else 'rgba(255,193,7,0.15)'
     # التحقق من الوقت في السيرفر
     if time.time() > st.session_state.end_time:
         finish_exam()
@@ -277,10 +293,10 @@ def phase_exam():
     st.caption(f"القسم: {sec}")
     st.subheader(f"سؤال {idx + 1} من {total}")
     if passage:
-        st.markdown(f'<div style="background:rgba(255,193,7,0.1); border-right:5px solid #ffc107; padding:20px; border-radius:8px; direction:ltr; text-align:left; margin-bottom:20px; color:white;">{passage}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="background:{passage_bg}; border-right:5px solid #ffc107; padding:20px; border-radius:8px; direction:ltr; text-align:left; margin-bottom:20px; color:{passage_color};">{passage}</div>', unsafe_allow_html=True)
 
     dir_css = "ltr" if st.session_state.subject == 'اللغة الإنجليزية' else "rtl"
-    st.markdown(f"<div style='direction:{dir_css}; text-align:right; font-size:22px; margin-bottom:20px; color:white;'><b>{txt}</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='direction:{dir_css}; text-align:right; font-size:22px; margin-bottom:20px; color:{txt_color};'><b>{txt}</b></div>", unsafe_allow_html=True)
 
     ans = st.session_state.user_answers.get(q_id)
     st.radio("Options", opts, index=opts.index(ans) if ans in opts else None, key=f"q_{q_id}", on_change=save_answer, args=(q_id,), label_visibility="collapsed")
@@ -318,47 +334,103 @@ def phase_results():
 def main():
     st.set_page_config(page_title="الامتحان الوطني الافتراضي", page_icon="📝", layout="wide")
     
-    # تنسيق القائمة الجانبية بالعربي
-    st.markdown("""
+    # تهيئة الوضع (داكن افتراضياً)
+    if 'dark_mode' not in st.session_state:
+        st.session_state.dark_mode = True
+
+    # ألوان الوضع الداكن والفاتح
+    if st.session_state.dark_mode:
+        bg = "#0e1117"; card_bg = "#1a1a1b"; border = "#3e3e42"
+        text = "#ffffff"; text2 = "#e0e0e0"; muted = "#888"
+        selected_bg = "#2d1616"; sidebar_bg = "#0e1117"; sidebar_text = "#ffffff"
+        radio_bg = "#1a1a1b"; radio_text = "white"
+    else:
+        bg = "#ffffff"; card_bg = "#f8f9fa"; border = "#dee2e6"
+        text = "#1a1a2e"; text2 = "#333333"; muted = "#666"
+        selected_bg = "#ffe0e0"; sidebar_bg = "#f0f2f6"; sidebar_text = "#1a1a2e"
+        radio_bg = "#f0f2f6"; radio_text = "#1a1a2e"
+
+    # CSS الرئيسي مع دعم الوضعين
+    st.markdown(f"""
     <style>
     /* القائمة الجانبية RTL */
-    [data-testid="stSidebar"] {
+    [data-testid="stSidebar"] {{
         direction: rtl;
         text-align: right;
-    }
-    [data-testid="stSidebar"] [data-testid="stSidebarNav"] {
+        background-color: {sidebar_bg} !important;
+    }}
+    [data-testid="stSidebar"] > div:first-child {{
+        background-color: {sidebar_bg} !important;
+    }}
+    [data-testid="stSidebar"] * {{
+        color: {sidebar_text} !important;
+    }}
+    [data-testid="stSidebar"] .stButton button {{
+        color: {sidebar_text} !important;
+        border-color: {border} !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] {{
         direction: rtl;
         padding-top: 15px;
-    }
-    [data-testid="stSidebar"] [data-testid="stSidebarNav"] a {
+    }}
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
         direction: rtl;
         text-align: right;
         font-size: 16px !important;
         font-weight: 600 !important;
         padding: 10px 20px !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stSidebarNav"] a span {
+    }}
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] a span {{
         font-size: 16px !important;
-    }
+    }}
     /* عنوان القائمة الجانبية */
-    .sidebar-title {
+    .sidebar-title {{
         text-align: center;
         padding: 15px 10px;
-        border-bottom: 1px solid #3e3e42;
+        border-bottom: 1px solid {border};
         margin-bottom: 15px;
-    }
-    .sidebar-title h3 {
+    }}
+    .sidebar-title h3 {{
         background: linear-gradient(135deg, #ff4b4b, #ff8f00);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-size: 1.3rem;
         font-weight: 900;
         margin: 0;
-    }
+    }}
+    /* ألوان الوضع */
+    .main .block-container {{
+        color: {text} !important;
+    }}
+    .stApp {{
+        background-color: {bg} !important;
+    }}
+    .stApp [data-testid="stHeader"] {{
+        background-color: {bg} !important;
+    }}
+    h1, h2, h3, h4, h5, h6, p, span, label, .stMarkdown {{
+        color: {text} !important;
+    }}
+    .stCaption, .stCaption p {{
+        color: {muted} !important;
+    }}
+    hr {{
+        border-color: {border} !important;
+    }}
+    /* أزرار */
+    .stButton button {{
+        color: {text} !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
     
-    st.sidebar.markdown('<div class="sidebar-title"><h3>📝 الامتحان الوطني</h3></div>', unsafe_allow_html=True)
+    st.sidebar.markdown(f'<div class="sidebar-title"><h3>📝 الامتحان الوطني</h3></div>', unsafe_allow_html=True)
+
+    # زر تبديل الوضع
+    theme_label = "☀️ الوضع النهاري" if st.session_state.dark_mode else "🌙 الوضع الليلي"
+    if st.sidebar.button(theme_label, use_container_width=True):
+        st.session_state.dark_mode = not st.session_state.dark_mode
+        st.rerun()
 
     # تغيير أسماء الصفحات في القائمة الجانبية من الإنجليزي للعربي
     components.html("""
