@@ -40,10 +40,18 @@ def get_balanced_questions(subject, total_limit):
         q_per = total_limit // len(sections)
         rem = total_limit % len(sections)
         qs = []
+        selected_ids = set()
         for i, sec in enumerate(sections):
             limit = q_per + (1 if i < rem else 0)
-            cursor.execute('SELECT * FROM Questions WHERE subject=? AND section=? ORDER BY RANDOM() LIMIT ?', (subject, sec, limit))
-            qs.extend(cursor.fetchall())
+            if selected_ids:
+                placeholders = ','.join('?' * len(selected_ids))
+                cursor.execute(f'SELECT * FROM Questions WHERE subject=? AND section=? AND id NOT IN ({placeholders}) ORDER BY RANDOM() LIMIT ?', (subject, sec, *selected_ids, limit))
+            else:
+                cursor.execute('SELECT * FROM Questions WHERE subject=? AND section=? ORDER BY RANDOM() LIMIT ?', (subject, sec, limit))
+            rows = cursor.fetchall()
+            for r in rows:
+                selected_ids.add(r[0])
+            qs.extend(rows)
     return qs
 
 def save_answer(q_id):
